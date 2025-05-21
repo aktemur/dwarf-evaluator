@@ -297,74 +297,98 @@ let context = [TargetMem(0, ints_to_data [100; 104; 108; 112; 116; 120]);
                TargetReg(5, int_to_data 4); (* Pointer to memory #4.  *)
               ]
 
-let expr1 =
-  eval0 [DW_OP_const 9;
-         DW_OP_const 5;
-         DW_OP_plus;
-         DW_OP_const 3;
-         DW_OP_mul] context
+let test value expectation message =
+  Printf.printf "%s: %s\n" (if value = expectation then "Pass" else "FAIL") message
+;;
 
+test (eval0 [DW_OP_const 9;
+             DW_OP_const 5;
+             DW_OP_plus;
+             DW_OP_const 3;
+             DW_OP_mul] context)
+  (Val 42)
+  "arithmetic expr"
 
 (* x is an integer in memory.  *)
-let x_address = 4
-let x_locexpr = [DW_OP_addr x_address]
-let x_loc = eval_to_loc x_locexpr context
-let x_val = fetch_int context x_loc
-let addr_of_x = dbg_addr_of x_loc
+let _ =
+  let x_address = 4 in
+  let x_locexpr = [DW_OP_addr x_address] in
+  let x_loc = eval_to_loc x_locexpr context in
+  let x_val = fetch_int context x_loc in
+  let addr_of_x = dbg_addr_of x_loc in
+  test x_val 104 "value of x";
+  test addr_of_x 4 "address of x"
 
 (* y is an integer in register 1.  *)
-let y_locexpr = [DW_OP_reg 1]
-let y_loc = eval_to_loc y_locexpr context
-let y_val = fetch_int context y_loc
+let _ =
+  let y_locexpr = [DW_OP_reg 1] in
+  let y_loc = eval_to_loc y_locexpr context in
+  let y_val = fetch_int context y_loc in
+  test y_val 1001 "value of y"
 
 (* p is a pointer to x and is located in register 5.  *)
-let p_locexpr = [DW_OP_reg 5]
-let p_loc = eval_to_loc p_locexpr context
-let p_val = fetch_int context p_loc
-let p_deref_val = dbg_deref p_loc context
+let _ =
+  let p_locexpr = [DW_OP_reg 5] in
+  let p_loc = eval_to_loc p_locexpr context in
+  let p_val = fetch_int context p_loc in
+  let p_deref_val = dbg_deref p_loc context in
+  test p_val 4 "value of p";
+  test p_deref_val 104 "value of *p"
 
 (* ip is an implicit pointer to x.  We can deref, but we cannot
    read/write ip.  *)
-let ip_locexpr = [DW_OP_implicit_pointer (x_locexpr, 0)]
-let ip_loc = eval_to_loc ip_locexpr context
-let ip_deref_val = dbg_deref ip_loc context
+let _ =
+  let ip_locexpr = [DW_OP_implicit_pointer ([DW_OP_addr 4], 0)] in
+  let ip_loc = eval_to_loc ip_locexpr context in
+  let ip_deref_val = dbg_deref ip_loc context in
+  test ip_deref_val 104 "value of *ip"
 
 (* v is a vectorized integer in register 4.  *)
-let v_locexpr = [DW_OP_reg 4;
-                 DW_OP_push_lane;
-                 DW_OP_const 4;
-                 DW_OP_mul;
-                 DW_OP_offset]
-let v_loc = eval_to_loc v_locexpr (Lane(3)::context)
-let v_val = fetch_int (Lane(3)::context) v_loc
-let v_loc = eval_to_loc v_locexpr (Lane(5)::context)
-let v_val = fetch_int (Lane(5)::context) v_loc
+let _ =
+  let v_locexpr = [DW_OP_reg 4;
+                   DW_OP_push_lane;
+                   DW_OP_const 4;
+                   DW_OP_mul;
+                   DW_OP_offset] in
+  let v_loc = eval_to_loc v_locexpr (Lane(3)::context) in
+  let v_val = fetch_int (Lane(3)::context) v_loc in
+  test v_val 403 "value of v in lane 3";
+  let v_loc = eval_to_loc v_locexpr (Lane(5)::context) in
+  let v_val = fetch_int (Lane(5)::context) v_loc in
+  test v_val 405 "value of v in lane 5"
 
 (* q is a value computed in the DWARF stack.  *)
-let q_locexpr = [DW_OP_const 14;
-                 DW_OP_const 3;
-                 DW_OP_mul;
-                 DW_OP_stack_value]
-let q_loc = eval_to_loc q_locexpr empty
-let q_val = fetch_int empty q_loc
+let _ =
+  let q_locexpr = [DW_OP_const 14;
+                   DW_OP_const 3;
+                   DW_OP_mul;
+                   DW_OP_stack_value] in
+  let q_loc = eval_to_loc q_locexpr empty in
+  let q_val = fetch_int empty q_loc in
+  test q_val 42 "stack value"
 
 (* z is located 12 bytes away from p's pointee.  *)
-let z_locexpr = [DW_OP_breg(5, 12)]
-let z_loc = eval_to_loc z_locexpr context
-let z_addr = dbg_addr_of z_loc
-let z_val = fetch_int context z_loc
+let _ =
+  let z_locexpr = [DW_OP_breg(5, 12)] in
+  let z_loc = eval_to_loc z_locexpr context in
+  let z_addr = dbg_addr_of z_loc in
+  let z_val = fetch_int context z_loc in
+  test z_addr 16 "address of z";
+  test z_val 116 "value of z"
 
 (* Another approach for the same thing.  *)
-let z_locexpr = [DW_OP_addr 0;
-                 DW_OP_reg 5;
-                 DW_OP_deref;
-                 DW_OP_offset;
-                 DW_OP_const 12;
-                 DW_OP_offset]
-let z_loc = eval_to_loc z_locexpr context
-let z_addr = dbg_addr_of z_loc
-let z_val = fetch_int context z_loc
-
+let _ =
+  let z_locexpr = [DW_OP_addr 0;
+                   DW_OP_reg 5;
+                   DW_OP_deref;
+                   DW_OP_offset;
+                   DW_OP_const 12;
+                   DW_OP_offset] in
+  let z_loc = eval_to_loc z_locexpr context in
+  let z_addr = dbg_addr_of z_loc in
+  let z_val = fetch_int context z_loc in
+  test z_addr 16 "address of z, take 2";
+  test z_val 116 "value of z, take 2"
 
 (* Suppose we have a struct as follows:
 
@@ -376,42 +400,49 @@ let z_val = fetch_int context z_loc
      int d; // Implicit data known to be 333;
    } s;
 *)
-let s_locexpr = [DW_OP_composite;
-                 DW_OP_addr 20;
-                 DW_OP_piece 4;
-                 DW_OP_implicit_pointer (x_locexpr, 0);
-                 DW_OP_piece 4;
-                 DW_OP_reg 2;
-                 DW_OP_piece 4;
-                 DW_OP_reg 3;
-                 DW_OP_piece 4;
-                 DW_OP_implicit_value (int_to_data 333);
-                 DW_OP_piece 4]
-let s_loc = eval_to_loc s_locexpr context
-(* ... s.m ... *)
-let s_m_locexpr = s_locexpr @ [DW_OP_const 0; DW_OP_offset]
-let s_m_val = fetch_int context (eval_to_loc s_m_locexpr context)
-(* ... s.r3 ... *)
-let s_r2_locexpr = s_locexpr @ [DW_OP_const 8; DW_OP_offset]
-let s_r2_val = fetch_int context (eval_to_loc s_r2_locexpr context)
-(* ... s.r4 ... *)
-let s_r3_locexpr = s_locexpr @ [DW_OP_const 12; DW_OP_offset]
-let s_r3_val = fetch_int context (eval_to_loc s_r3_locexpr context)
-(* ... s.d ... *)
-let s_d_locexpr = s_locexpr @ [DW_OP_const 16; DW_OP_offset]
-let s_d_val = fetch_int context (eval_to_loc s_d_locexpr context)
-(* ... *s.ptr ... *)
-let s_ptr_locexpr = s_locexpr @ [DW_OP_const 4; DW_OP_offset]
-let s_ptr_loc = eval_to_loc s_ptr_locexpr context
-let s_ptr_deref_val = dbg_deref s_ptr_loc context
 
-(* iptr_s is an implicit pointer to s above.  *)
-let iptr_s_locexpr = [DW_OP_implicit_pointer (s_locexpr, 0)]
-let iptr_s_loc = eval_to_loc iptr_s_locexpr context
-
-(* ... this.r3 ...  *)
-let r3_data_member_locexpr = [DW_OP_push_object_location;
-                              DW_OP_const 12;
-                              DW_OP_offset]
-let r3_data_member_loc = eval_to_loc r3_data_member_locexpr (Object(s_loc)::context)
-let r3_data_member_val = fetch_int context r3_data_member_loc
+let _ =
+  let s_locexpr = [DW_OP_composite;
+                   DW_OP_addr 20;
+                   DW_OP_piece 4;
+                   DW_OP_implicit_pointer ([DW_OP_addr 4], 0);
+                   DW_OP_piece 4;
+                   DW_OP_reg 2;
+                   DW_OP_piece 4;
+                   DW_OP_reg 3;
+                   DW_OP_piece 4;
+                   DW_OP_implicit_value (int_to_data 333);
+                   DW_OP_piece 4] in
+  let s_loc = eval_to_loc s_locexpr context in
+  (* ... s.m ... *)
+  let s_m_locexpr = s_locexpr @ [DW_OP_const 0; DW_OP_offset] in
+  let s_m_val = fetch_int context (eval_to_loc s_m_locexpr context) in
+  test s_m_val 120 "value of s.m";
+  (* ... s.r2 ... *)
+  let s_r2_locexpr = s_locexpr @ [DW_OP_const 8; DW_OP_offset] in
+  let s_r2_val = fetch_int context (eval_to_loc s_r2_locexpr context) in
+  test s_r2_val 1002 "value of s.r2";
+  (* ... s.r3 ... *)
+  let s_r3_locexpr = s_locexpr @ [DW_OP_const 12; DW_OP_offset] in
+  let s_r3_val = fetch_int context (eval_to_loc s_r3_locexpr context) in
+  test s_r3_val 1003 "value of s.r3";
+  (* ... s.d ... *)
+  let s_d_locexpr = s_locexpr @ [DW_OP_const 16; DW_OP_offset] in
+  let s_d_val = fetch_int context (eval_to_loc s_d_locexpr context) in
+  test s_d_val 333 "value of s.d";
+  (* ... *s.ptr ... *)
+  let s_ptr_locexpr = s_locexpr @ [DW_OP_const 4; DW_OP_offset] in
+  let s_ptr_loc = eval_to_loc s_ptr_locexpr context in
+  let s_ptr_deref_val = dbg_deref s_ptr_loc context in
+  test s_ptr_deref_val 104 "value of *s.ptr";
+  (* iptr_s is an implicit pointer to s above.  *)
+  let iptr_s_locexpr = [DW_OP_implicit_pointer (s_locexpr, 0)] in
+  let _ = eval_to_loc iptr_s_locexpr context in
+  (* TODO: add tests.  *)
+  (* ... this.r3 ...  *)
+  let r3_data_member_locexpr = [DW_OP_push_object_location;
+                                DW_OP_const 12;
+                                DW_OP_offset] in
+  let r3_data_member_loc = eval_to_loc r3_data_member_locexpr (Object(s_loc)::context) in
+  let r3_data_member_val = fetch_int context r3_data_member_loc in
+  test r3_data_member_val 1003 ".r3 with an object context"
