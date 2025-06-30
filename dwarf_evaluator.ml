@@ -340,8 +340,16 @@ let context = [TargetMem(0, mem_contents);
                TargetReg(6, "89AB");
               ]
 
+let num_pass = ref 0
+let num_fail = ref 0
 let test value expectation message =
-  Printf.printf "%s: %s\n" (if value = expectation then "Pass" else "FAIL") message
+  let result =
+    if value = expectation then
+      (num_pass := !num_pass + 1; "Pass")
+    else
+      (num_fail := !num_fail + 1; "FAIL")
+  in
+    Printf.printf "%s: %s\n" result message
 
 (* Simple arithmethic exp test.  *)
 let _ =
@@ -600,3 +608,11 @@ let _ =
     (Composite [(1, 3, (Reg 2, 2));
                 (0, 1, (Reg 1, 3))], 0)
     "overlay: concat two registers with offsets"
+
+(****************************)
+(* Print the final result.  *)
+let _ =
+  Printf.printf "*************************\n";
+  Printf.printf "# of passes:\t %d\n" !num_pass;
+  Printf.printf "# of failures:\t %d\n" !num_fail;
+  Printf.printf "*************************\n";
