@@ -279,13 +279,20 @@ let dbg_addr_of (loc: location) =
 (* Sample contexts for testing purposes.  *)
 let empty = []
 
-let context = [TargetMem(0, ints_to_data [100; 104; 108; 112; 116; 120]);
+let mem_contents =
+  String.concat ""
+    [(ints_to_data [100; 104; 108; 112; 116; 120]);
+     "01234567XXXXCDEF"; (* Starting at offset 24. *)
+    ]
+
+let context = [TargetMem(0, mem_contents);
                TargetReg(0, int_to_data 1000);
                TargetReg(1, int_to_data 1001);
                TargetReg(2, int_to_data 1002);
                TargetReg(3, int_to_data 1003);
                TargetReg(4, ints_to_data [400; 401; 402; 403; 404; 405; 406; 407]);
                TargetReg(5, int_to_data 4); (* Pointer to memory #4.  *)
+               TargetReg(6, "89AB");
               ]
 
 let test value expectation message =
@@ -442,3 +449,29 @@ let _ =
   let r3_data_member_loc = eval_to_loc r3_data_member_locexpr (Object(s_loc)::context) in
   let r3_data_member_val = fetch_int context r3_data_member_loc in
   test r3_data_member_val 1003 ".r3 with an object context"
+
+(* An array, whose values are "0123456789ABCDEF".  The elements "89AB"
+   are in register 6, the others are in the memory.  This example
+   illustrates promotion of array elements to a vector register.  *)
+let _ =
+  let array_locexpr = [DW_OP_composite;
+                       DW_OP_addr 24;
+                       DW_OP_piece 8;
+                       DW_OP_reg 6;
+                       DW_OP_piece 4;
+                       DW_OP_addr (24 + 12);
+                       DW_OP_piece 4] in
+  let (storage, offset) = eval_to_loc array_locexpr context in
+  let array_element i =
+    fetch_data context (storage, offset + i) 1
+  in
+  test (array_element 0) "0" "array[0] in composite";
+  test (array_element 3) "3" "array[3] in composite";
+  test (array_element 7) "7" "array[7] in composite";
+  test (array_element 8) "8" "array[8] in composite";
+  test (array_element 9) "9" "array[9] in composite";
+  test (array_element 10) "A" "array[10] in composite";
+  test (array_element 11) "B" "array[11] in composite";
+  test (array_element 12) "C" "array[12] in composite";
+  test (array_element 15) "F" "array[15] in composite";
+  ()
