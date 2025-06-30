@@ -333,7 +333,15 @@ let _ =
   let ip_locexpr = [DW_OP_implicit_pointer ([DW_OP_addr 4], 0)] in
   let ip_loc = eval_to_loc ip_locexpr context in
   let ip_deref_val = dbg_deref ip_loc context in
-  test ip_deref_val 104 "value of *ip"
+  test ip_deref_val 104 "value of *ip, pointing to memory"
+
+(* ip is an implicit pointer to a variable that has been promoted to
+   register 3.  *)
+let _ =
+  let ip_locexpr = [DW_OP_implicit_pointer ([DW_OP_reg 3], 0)] in
+  let ip_loc = eval_to_loc ip_locexpr context in
+  let ip_deref_val = dbg_deref ip_loc context in
+  test ip_deref_val 1003 "value of *ip, pointing to register"
 
 (* v is a vectorized integer in register 4.  *)
 let _ =
@@ -427,10 +435,6 @@ let _ =
   let s_ptr_loc = eval_to_loc s_ptr_locexpr context in
   let s_ptr_deref_val = dbg_deref s_ptr_loc context in
   test s_ptr_deref_val 104 "value of *s.ptr";
-  (* iptr_s is an implicit pointer to s above.  *)
-  let iptr_s_locexpr = [DW_OP_implicit_pointer (s_locexpr, 0)] in
-  let _ = eval_to_loc iptr_s_locexpr context in
-  (* TODO: add tests.  *)
   (* ... this.r3 ...  *)
   let r3_data_member_locexpr = [DW_OP_push_object_location;
                                 DW_OP_const 12;
