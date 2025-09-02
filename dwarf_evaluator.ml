@@ -83,6 +83,7 @@ type dwarf_op =
   | DW_OP_eq
   | DW_OP_skip of int (* Number of operators to skip.  *)
   | DW_OP_bra of int (* Number of operators to skip.  *)
+  | DW_OP_call of (dwarf_op list)
 
   | DW_OP_addr of int
   | DW_OP_reg of int
@@ -254,6 +255,9 @@ let rec eval op stack context =
          else
            Val(0)::stack'
       | _ -> eval_error op stack)
+
+  | DW_OP_call(ops) ->
+     eval_all ops stack context
 
   | DW_OP_addr(a) -> Loc(Mem 0, a)::stack
 
@@ -550,6 +554,16 @@ let _ =
                DW_OP_const 4;
                DW_OP_const 5;
                DW_OP_plus] context) (Val 9) "control flow 2"
+let _ =
+  test (eval0 [DW_OP_const 17;
+               DW_OP_const 25;
+               DW_OP_call [DW_OP_plus]] context) (Val 42) "DW_OP_call 1"
+let _ =
+  test (eval0 [DW_OP_const 17;
+               DW_OP_const 25;
+               DW_OP_call [DW_OP_plus];
+               DW_OP_const 8;
+               DW_OP_plus] context) (Val 50) "DW_OP_call 2"
 
 (* x is an integer in memory.  *)
 let _ =
