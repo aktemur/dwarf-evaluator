@@ -79,6 +79,9 @@ type dwarf_op =
   | DW_OP_push_lane
   | DW_OP_regval of int
 
+  | DW_OP_lt
+  | DW_OP_eq
+
   | DW_OP_addr of int
   | DW_OP_reg of int
   | DW_OP_breg of int * int
@@ -226,6 +229,24 @@ let rec eval op stack context =
      let data = reg_data context r in
      let as_int = Int32.to_int (String.get_int32_ne data 0) in
      Val(as_int)::stack
+
+  | DW_OP_lt ->
+     (match stack with
+      | e1::e2::stack' ->
+         if (as_value e2) < (as_value e1) then
+           Val(1)::stack'
+         else
+           Val(0)::stack'
+      | _ -> eval_error op stack)
+
+  | DW_OP_eq ->
+     (match stack with
+      | e1::e2::stack' ->
+         if (as_value e2) == (as_value e1) then
+           Val(1)::stack'
+         else
+           Val(0)::stack'
+      | _ -> eval_error op stack)
 
   | DW_OP_addr(a) -> Loc(Mem 0, a)::stack
 
@@ -458,6 +479,24 @@ let _ =
                DW_OP_mul] context)
     (Val 42)
     "arithmetic expr"
+
+(* Relational operators.  *)
+let _ =
+  test (eval0 [DW_OP_const 9;
+               DW_OP_const 5;
+               DW_OP_lt] context) (Val 0) "DW_OP_lt 1"
+let _ =
+  test (eval0 [DW_OP_const 5;
+               DW_OP_const 9;
+               DW_OP_lt] context) (Val 1) "DW_OP_lt 2"
+let _ =
+  test (eval0 [DW_OP_const 9;
+               DW_OP_const 5;
+               DW_OP_eq] context) (Val 0) "DW_OP_eq 1"
+let _ =
+  test (eval0 [DW_OP_const 9;
+               DW_OP_const 9;
+               DW_OP_eq] context) (Val 1) "DW_OP_eq 2"
 
 (* x is an integer in memory.  *)
 let _ =
