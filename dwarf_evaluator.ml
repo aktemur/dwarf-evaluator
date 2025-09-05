@@ -917,7 +917,6 @@ let _ =
     "overlay: width is larger than overlay, non-zero overlay offset"
 
 let _ =
-  let reg_size = data_size (Reg 2) context in
   let overlay_locexpr = [DW_OP_composite;
                          DW_OP_reg 2;
                          DW_OP_const 0;
@@ -929,7 +928,6 @@ let _ =
     "overlay: on empty base"
 
 let _ =
-  let reg_size = data_size (Reg 2) context in
   let overlay_locexpr = [DW_OP_composite;
                          DW_OP_reg 2;
                          DW_OP_const 3;
