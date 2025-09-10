@@ -1,0 +1,5 @@
+(library
+  (name dwarf_evaluator)
+  (public_name dwarf_evaluator))
+(env
+  (dev (flags (:standard -warn-error -A -w -27-37-38))))

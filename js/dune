@@ -1,0 +1,17 @@
+(library
+  (name dwarf_evaluator_sexp)
+  (modules dwarf_evaluator_sexp)
+  (libraries dwarf_evaluator sexplib)
+  (preprocess (staged_pps ppx_import ppx_sexp_conv)))
+(executable
+  (name dwarf_evaluator_js)
+  (modules dwarf_evaluator_js)
+  (libraries dwarf_evaluator_sexp sexplib)
+  (modes js)
+  (preprocess (pps js_of_ocaml-ppx)))
+(rule
+  (target dwarf_evaluator.html)
+  (deps dwarf_evaluator.html.in dwarf_evaluator_js.bc.js postprocess.sh)
+  (action
+    (chdir %{workspace_root}/js
+           (run ./postprocess.sh %{target} %{profile} %{deps}))))
