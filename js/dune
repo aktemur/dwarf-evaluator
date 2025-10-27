@@ -6,7 +6,7 @@
 (executable
   (name dwarf_evaluator_js)
   (modules dwarf_evaluator_js)
-  (libraries dwarf_evaluator_sexp sexplib)
+  (libraries dwarf_evaluator_sexp sexplib str)
   (modes js)
   (preprocess (pps js_of_ocaml-ppx)))
 (rule
