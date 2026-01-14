@@ -11,9 +11,9 @@
   (name dwarf_evaluator)
   (synopsis "A DWARF expression evaluator")
   (depends
-    (ocaml (>= 4.13))
+    (ocaml (>= 5.4.0))
     (sexplib (>= 0.17))
     (ppx_sexp_conv (>= 0.17.1))
-    (ppx_import (>= 1.11.0))
+    (ppx_import (>= 1.12.0))
     (js_of_ocaml (>= 6.2.0))
     (js_of_ocaml-ppx (>= 6.2.0))))
