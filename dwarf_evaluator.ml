@@ -34,6 +34,11 @@ type dwarf_op =
   | DW_OP_push_lane
   | DW_OP_regval of int
 
+  | DW_OP_and
+  | DW_OP_or
+  | DW_OP_shl
+  | DW_OP_shr
+
   | DW_OP_lt
   | DW_OP_eq
   | DW_OP_skip of int (* Number of operators to skip.  *)
@@ -386,6 +391,26 @@ let rec eval_one_simple op stack context =
      let data = reg_data context r in
      let as_int = Int32.to_int (String.get_int32_ne data 0) in
      Val(as_int)::stack
+
+  | DW_OP_and ->
+     (match stack with
+      | e1::e2::stack' -> Val(Int.logand (as_value e1) (as_value e2))::stack'
+      | _ -> eval_error "DW_OP_and: need two elements on stack")
+
+  | DW_OP_or ->
+     (match stack with
+      | e1::e2::stack' -> Val(Int.logor (as_value e1) (as_value e2))::stack'
+      | _ -> eval_error "DW_OP_or: need two elements on stack")
+
+  | DW_OP_shl ->
+     (match stack with
+      | e1::e2::stack' -> Val(Int.shift_left (as_value e2) (as_value e1))::stack'
+      | _ -> eval_error "DW_OP_shl: need two elements on stack")
+
+  | DW_OP_shr ->
+     (match stack with
+      | e1::e2::stack' -> Val(Int.shift_right (as_value e2) (as_value e1))::stack'
+      | _ -> eval_error "DW_OP_shr: need two elements on stack")
 
   | DW_OP_lt ->
      (match stack with
@@ -773,6 +798,24 @@ let _ =
                DW_OP_mul] context)
     (Val 42)
     "arithmetic expr"
+
+(* Bit operators.  *)
+let _ =
+  test (eval0 [DW_OP_lit7;
+               DW_OP_lit14;
+               DW_OP_and] context) (Val 6) "DW_OP_and"
+let _ =
+  test (eval0 [DW_OP_lit7;
+               DW_OP_lit14;
+               DW_OP_or] context) (Val 15) "DW_OP_or"
+let _ =
+  test (eval0 [DW_OP_lit8;
+               DW_OP_lit2;
+               DW_OP_shl] context) (Val 32) "DW_OP_shl"
+let _ =
+  test (eval0 [DW_OP_lit16;
+               DW_OP_lit2;
+               DW_OP_shr] context) (Val 4) "DW_OP_shr"
 
 (* Relational operators.  *)
 let _ =
