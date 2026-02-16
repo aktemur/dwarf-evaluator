@@ -144,7 +144,7 @@ type stack_element =
   | Loc of location
 
 (* What is the size of a virtual storage?  *)
-let data_size storage context =
+let rec data_size storage context =
   match storage with
   | Mem(addr_space) -> Int.max_int
   | Reg(n) -> String.length (reg_data context n)
