@@ -86,9 +86,13 @@ type context_item =
   | Lane of int               (* Selected lane.  *)
   | Object of location        (* Current object.  *)
   (* Operators like DW_OP_call and DW_OP_implicit_pointer refer to the
-     DW_AT_location of a DIE.  These can be specified in the
-     context using DW_AT_location.  *)
-  | DW_AT_location of string * (dwarf_op list) (* Name of DIE and expr.  *)
+     DW_AT_location of a DIE.  These can be specified in the context
+     using DW_AT_location.
+
+     The entry in DWARF may be a loclist with overlapping PC ranges,
+     which would give a list of DWARF expressions (i.e. a multi-location).
+     Hence, a list of expressions.  *)
+  | DW_AT_location of string * (dwarf_expr list) (* Name of DIE and expressions.  *)
 
 (* Virtual storage.  *)
 and storage =
@@ -101,6 +105,9 @@ and storage =
 
 (* Location is an offset into a storage.  *)
 and location = storage * int
+
+(* A DWARF expression is "a stream of operations".  *)
+and dwarf_expr = dwarf_op list
 
 (* Context accessors for convenience.  *)
 let rec mem_data context addr_space =
@@ -134,7 +141,7 @@ let rec objekt context =
 let rec dw_at_location context name =
   match context with
   | [] -> failwith ("item '" ^ name ^ "' not found in context")
-  | DW_AT_location(name', expr)::context' when name = name' -> expr
+  | DW_AT_location(name', exprs)::context' when name = name' -> exprs
   | _::context' -> dw_at_location context' name
 
 (* Element kinds for the DWARF expression evaluation stack.
@@ -440,7 +447,9 @@ let rec eval_one_simple op stack context =
       | _ -> eval_error "DW_OP_eq: need two elements on stack")
 
   | DW_OP_call(name) ->
-     eval_all (dw_at_location context name) stack context
+     (match dw_at_location context name with
+      | expr::[] -> eval_all expr stack context
+      | exprs -> eval_error "DW_OP_call: multi-locations not supported")
 
   | DW_OP_addr(a) -> Loc(Mem 0, a)::stack
 
@@ -870,12 +879,12 @@ let _ =
                DW_OP_lit5;
                DW_OP_plus] context) (Val 9) "control flow 2"
 let _ =
-  let context = DW_AT_location("plus", [DW_OP_plus])::context in
+  let context = DW_AT_location("plus", [[DW_OP_plus]])::context in
   test (eval0 [DW_OP_lit17;
                DW_OP_lit25;
                DW_OP_call "plus"] context) (Val 42) "DW_OP_call 1"
 let _ =
-  let context = DW_AT_location("plus", [DW_OP_plus])::context in
+  let context = DW_AT_location("plus", [[DW_OP_plus]])::context in
   test (eval0 [DW_OP_lit17;
                DW_OP_lit25;
                DW_OP_call "plus";
@@ -924,7 +933,7 @@ let _ =
 (* ip is an implicit pointer to x.  We can deref, but we cannot
    read/write ip.  *)
 let _ =
-  let context = DW_AT_location("x", [DW_OP_addr 4])::context in
+  let context = DW_AT_location("x", [[DW_OP_addr 4]])::context in
   let ip_locexpr = [DW_OP_implicit_pointer ("x", 0)] in
   let ip_loc = eval_to_loc ip_locexpr context in
   let ip_deref_val = dbg_deref ip_loc context in
@@ -933,7 +942,7 @@ let _ =
 (* ip is an implicit pointer to a variable that has been promoted to
    register 3.  *)
 let _ =
-  let context = DW_AT_location("var", [DW_OP_reg3])::context in
+  let context = DW_AT_location("var", [[DW_OP_reg3]])::context in
   let ip_locexpr = [DW_OP_implicit_pointer ("var", 0)] in
   let ip_loc = eval_to_loc ip_locexpr context in
   let ip_deref_val = dbg_deref ip_loc context in
@@ -1005,7 +1014,7 @@ let _ =
 *)
 
 let _ =
-  let context = DW_AT_location("x", [DW_OP_addr 4])::context in
+  let context = DW_AT_location("x", [[DW_OP_addr 4]])::context in
   let s_locexpr = [DW_OP_composite;
                    DW_OP_addr 20;
                    DW_OP_piece 4;

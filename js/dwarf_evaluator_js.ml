@@ -130,7 +130,7 @@ let _ =
           context_t_of_sexp (Parsexp.Single.parse_string_exn context_sexp_string)
         with e -> failwith (sprintf "Parsing Context: %s" (Printexc.to_string e)) in
         let locexpr = try
-          locexpr_t_of_sexp (Parsexp.Single.parse_string_exn locexpr_sexp_string)
+          dwarf_expr_of_sexp (Parsexp.Single.parse_string_exn locexpr_sexp_string)
         with e -> failwith (sprintf "Parsing Input: %s" (Printexc.to_string e)) in
         build_output_elems ctx locexpr
       with e -> [span [text (Printexc.to_string e)]] in

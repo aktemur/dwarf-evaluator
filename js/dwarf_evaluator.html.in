@@ -295,11 +295,11 @@ DW_OP_overlay
 (
   (TargetReg 0 "12345678")
   (DW_AT_location xyz
-    (
+    ((
       DW_OP_reg0
       DW_OP_swap
       DW_OP_offset
-    )
+    ))
   )
 )`,
     `
