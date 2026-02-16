@@ -166,6 +166,15 @@ exception ReadOnlyData of storage
 
 (* Utility operations.  *)
 
+(* Adjust the offset of a location.  *)
+let displace_offset location displacement context =
+  let (storage, offset) = location
+  in let new_offset = offset + displacement
+     in if (new_offset >= (data_size storage context)) then
+          raise (OutOfBounds (storage, new_offset))
+        else
+          (storage, new_offset)
+
 (* Find the part in a composite that contains the given offset.
    Return the location and the adjusted offset.  *)
 let find_part parts offset : location =
@@ -614,12 +623,9 @@ let rec eval_one_simple op stack context =
   | DW_OP_offset ->
      (match stack with
       | displacement::location::stack' ->
-         let (storage, offset) = as_loc location
-         in let new_offset = offset + (as_value displacement)
-            in if (new_offset >= (data_size storage context)) then
-                 raise (OutOfBounds (storage, offset))
-               else
-                 Loc(storage, new_offset)::stack'
+         let loc = as_loc location in
+         let offset2 = (as_value displacement) in
+         Loc(displace_offset loc offset2 context)::stack'
       | _ -> eval_error "DW_OP_offset: need two elements on stack")
 
   (* Handled in the upper level.  *)
