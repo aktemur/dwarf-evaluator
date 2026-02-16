@@ -531,11 +531,12 @@ let rec eval_one_simple op stack context =
       | _ -> eval_error "DW_OP_stack_value: need an element on stack")
 
   | DW_OP_implicit_pointer(name, offset) ->
-     (match eval_all (dw_at_location context name) [] context with
-      | result::_ ->
-         let (storage, offset2) = as_loc result
-         in Loc(ImpPointer(storage, offset2 + offset), 0)::stack
-      | _ -> eval_error "DW_OP_implicit_pointer: referenced locexpr must evaluate to a location")
+     (* This operator is similar to DW_OP_call, in that we need to
+        evaluate a referenced locexpr to a location.  Reuse
+        DW_OP_call's semantics.  *)
+     let result = List.hd (eval_one_simple (DW_OP_call name) [] context) in
+     let loc2 = as_loc result in
+     Loc(ImpPointer(displace_offset loc2 offset context), 0)::stack
 
   | DW_OP_composite -> Loc(Composite [], 0)::stack
 
