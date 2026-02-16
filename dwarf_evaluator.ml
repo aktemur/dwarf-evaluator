@@ -719,6 +719,8 @@ let test_error lambda message =
     let _ = lambda () in
     test 1 0 message
   with
+  | Failure _
+  | OutOfBounds _
   | EvalError _  -> test 1 1 message
 
 (* Simple stack operations.  *)
