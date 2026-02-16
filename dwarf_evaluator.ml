@@ -102,6 +102,7 @@ and storage =
   | ImpData of data (* Implicit data.  *)
   | ImpPointer of location (* Location of the pointed-to object.  *)
   | Composite of (int * int * location) list (* Parts of the composite.  *)
+  | MultiLoc of location list (* Result of a loclist with overlapping PC ranges.  *)
 
 (* Location is an offset into a storage.  *)
 and location = storage * int
@@ -164,6 +165,14 @@ let rec data_size storage context =
      4
   | Composite(parts) -> (* The largest "end" marker in the parts.  *)
      List.fold_left (fun max (s, e, loc) -> if e > max then e else max) 0 parts
+  | MultiLoc(locs) ->
+     if locs = [] then 0
+     else
+       (* Find the size of accessible data in each sublocation.
+          The smallest is the size of this MultiLoc.  *)
+       let accesible_size (st, off) = (data_size st context) - off in
+       let sizes = List.map accesible_size locs in
+       List.fold_left Int.min Int.max_int sizes
 
 (* Error kinds.  *)
 exception NotImplementedYet
@@ -262,6 +271,18 @@ let rec read_one_byte context (location: location) =
        | ImpData(data) -> String.get data offset
        | ImpPointer(_, _) -> raise (UndefinedData(offset))
        | Composite(parts) -> read_one_byte context (find_part parts offset)
+       | MultiLoc(locs) ->
+          (* Multi-location's offset is the displacement for each
+             sublocation.  *)
+          let read_subloc (s, i) = read_one_byte context (s, i + offset) in
+          (match List.map read_subloc locs with
+           | [] -> failwith "no sublocations in multi-loc"
+           | first::bytes ->
+              (* Each location must give the same byte value.  *)
+              if List.for_all (fun byte -> byte = first) bytes then
+                first
+              else
+                failwith "locations in multi-loc must contain the same data")
 
 let read_one_byte_opt context (location: location) =
   try
@@ -449,7 +470,12 @@ let rec eval_one_simple op stack context =
   | DW_OP_call(name) ->
      (match dw_at_location context name with
       | expr::[] -> eval_all expr stack context
-      | exprs -> eval_error "DW_OP_call: multi-locations not supported")
+      | exprs ->
+         (* If there are multiple expressions, each must evaluate
+            to a location.  They are then bundled into multi-location.  *)
+         let results = List.map (fun expr -> List.hd (eval_all expr stack context)) exprs
+         in let locs = List.map as_loc results
+            in Loc(MultiLoc locs, 0)::stack)
 
   | DW_OP_addr(a) -> Loc(Mem 0, a)::stack
 
@@ -1632,6 +1658,44 @@ let _ =
                 (6, 11, (Reg 4, 4));
                 (0, 6, (Reg 7, 0))], 3)
     "nested composite variant"
+
+(* Multi-location: A variable is in memory, but also copied to a
+   register.  This can happen with a loclist in the DW_AT_location
+   attribute of the variable, where there are overlapping PC
+   ranges.  *)
+let _ =
+  let context = [TargetMem(0, ints_to_data [1; 2; 123; 42; 4; 6]);
+                 TargetReg(3, ints_to_data [   3; 123; 42; 5])] in
+  (* Describe "123" in memory.  *)
+  let locexpr1 = [DW_OP_addr 8] in
+  (* Describe "123" in the middle of reg.  *)
+  let locexpr2 = [DW_OP_reg3; DW_OP_lit4; DW_OP_offset] in
+  (* DW_AT_location of variable "m" gives multiple exprs.  *)
+  let multiloc_expr = [locexpr1; locexpr2] in
+  let context = DW_AT_location("m", multiloc_expr)::context in
+
+  let multiloc = eval_to_loc [DW_OP_call "m"] context in
+  let multiloc2 = eval_to_loc [DW_OP_call "m"; DW_OP_lit4; DW_OP_offset] context in
+  let multiloc3 = eval_to_loc [DW_OP_call "m"; DW_OP_lit8; DW_OP_offset] context in
+
+  (* Implicit pointer with an offset of 4.
+     This must point to multiloc2.  *)
+  let imp_pointer_loc = eval_to_loc [DW_OP_implicit_pointer("m", 4)] context in
+
+  test multiloc (MultiLoc [(Mem 0, 8); (Reg 3, 4)], 0)
+    "multiloc: result is a MultiLoc";
+  test (fetch_int context multiloc) 123 "multiloc: read value";
+  test multiloc2 (MultiLoc [(Mem 0, 8); (Reg 3, 4)], 4)
+    "multiloc: result is a MultiLoc with offset";
+  test (fetch_int context multiloc2) 42 "multiloc: read value with offset";
+  test multiloc3 (MultiLoc [(Mem 0, 8); (Reg 3, 4)], 8)
+    "multiloc: result is a MultiLoc with further offset";
+  test_error (fun () -> fetch_int context multiloc3)
+    "multiloc: sublocations must yield the same data";
+  test_error (fun () -> eval_to_loc [DW_OP_call "m"; DW_OP_lit12; DW_OP_offset] context)
+    "multiloc: cannot extend the offset beyond the smallest sublocation";
+  test imp_pointer_loc (ImpPointer(multiloc2), 0)
+    "multiloc: implicit pointer"
 
 (****************************)
 (* Print the final result.  *)
