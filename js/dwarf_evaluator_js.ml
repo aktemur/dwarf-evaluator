@@ -72,6 +72,10 @@ and elem_of_location (storage, offset) =
     span ~cl:"location_offset" [text_of_int offset];
     span ~cl:"location_storage" [elem_of_storage storage]
   ]
+and elem_of_sublocation loc =
+  span ~cl:"sublocation" [
+    elem_of_location loc
+  ]
 and elem_of_storage storage =
   match storage with
   | Mem aspace -> span ~cl:"storage" [text (sprintf "Mem(aspace=%d)" aspace)]
@@ -89,6 +93,11 @@ and elem_of_storage storage =
       span [
         span ~cl:"storage" [text "Composite"];
         span ~cl:"composite_parts" (List.map elem_of_part sorted_parts)
+      ]
+  | MultiLoc locs ->
+      span [
+        span ~cl:"storage" [text "MultiLoc"];
+        span ~cl:"multi_loc_sublocs" (List.map elem_of_sublocation locs)
       ]
 and elem_of_part (s, e, loc) =
   span ~cl:"composite_part" [

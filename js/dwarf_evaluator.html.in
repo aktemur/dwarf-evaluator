@@ -126,6 +126,23 @@ details {
 }
 .composite_part_start::before { content: 'start='; }
 .composite_part_end::before { content: 'end='; }
+.multi_loc_sublocs {
+    display: flex;
+    flex-wrap: wrap;
+    flex-direction: column;
+    align-content: space-between;
+    align-items: stretch;
+}
+.sublocation {
+    padding: 1px;
+    border: 1px solid gray;
+    border-bottom: none;
+    margin: 0 1em;
+}
+.sublocation:last-child {
+    border-bottom: 1px solid gray;
+    margin-bottom: 0.5em;
+}
 .trace_result::before {
     display: block;
     content: 'final result:';
@@ -308,6 +325,21 @@ DW_OP_lit2
 DW_OP_plus
 DW_OP_call xyz
     `);
+    addPreset(
+    'Multi-loc',
+    'Example giving a multi-loc',
+    `
+(
+  (TargetMem 0 "11112222aaaa44446666")
+  (TargetReg 3 "3333aaaa5555")
+)`,
+    `
+DW_OP_addr 8
+DW_OP_reg3
+DW_OP_lit4
+DW_OP_offset
+DW_OP_multiloc
+`);
 </script>
 <script defer src="dwarf_evaluator_js.bc.js"></script>
 </html>
