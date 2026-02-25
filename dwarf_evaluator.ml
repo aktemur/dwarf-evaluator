@@ -72,6 +72,7 @@ type dwarf_op =
   | DW_OP_implicit_pointer of string * int
   | DW_OP_composite
   | DW_OP_piece of int
+  | DW_OP_multiloc
   | DW_OP_overlay
   | DW_OP_push_object_location
 
@@ -596,6 +597,13 @@ let rec eval_one_simple op stack context =
 
       (* Error-checking.  *)
       | _ -> eval_error "DW_OP_piece: need a location and a composite location on stack")
+
+  | DW_OP_multiloc ->
+     (match stack with
+      | e1::e2::stack' ->
+         let (loc1, loc2) = (as_loc e1, as_loc e2) in
+         Loc(MultiLoc [loc1; loc2], 0)::stack'
+      | _ -> eval_error "DW_OP_multiloc: need two locations on stack")
 
   | DW_OP_push_object_location -> Loc(objekt context)::stack
 
@@ -1696,6 +1704,12 @@ let _ =
     "multiloc: cannot extend the offset beyond the smallest sublocation";
   test imp_pointer_loc (ImpPointer(multiloc2), 0)
     "multiloc: implicit pointer"
+
+let _ =
+  let multiloc_expr = [DW_OP_addr 8; DW_OP_reg1; DW_OP_multiloc] in
+  let multiloc = eval_to_loc multiloc_expr context in
+  test multiloc (MultiLoc [(Reg 1, 0); (Mem 0, 8)], 0)
+    "DW_OP_multiloc: result is a multiloc"
 
 (****************************)
 (* Print the final result.  *)
