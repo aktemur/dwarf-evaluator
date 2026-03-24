@@ -72,6 +72,7 @@ type dwarf_op =
   | DW_OP_implicit_pointer of string * int
   | DW_OP_composite
   | DW_OP_piece of int
+  | DW_OP_overlay_copy
   | DW_OP_overlay
   | DW_OP_push_object_location
 
@@ -557,6 +558,7 @@ let rec eval_one_simple op stack context =
 
   | DW_OP_push_object_location -> Loc(objekt context)::stack
 
+  | DW_OP_overlay_copy
   | DW_OP_overlay ->
      (match stack with
       | el1::el2::el3::el4::stack' ->
@@ -570,11 +572,11 @@ let rec eval_one_simple op stack context =
          let o_storage_size = data_size o_storage context in
          let overlay_start = offset + b_offset in
          if width < 0 then
-           eval_error "DW_OP_overlay: width operand must be non-negative"
+           eval_error "DW_OP_overlay/DW_OP_overlay_copy: width operand must be non-negative"
          else if overlay_start < 0 then
-           eval_error "DW_OP_overlay: offset + base_offset must be non-negative"
+           eval_error "DW_OP_overlay/DW_OP_overlay_copy: offset + base_offset must be non-negative"
          else if width > o_storage_size - o_offset then
-           eval_error "DW_OP_overlay: overlay storage must be big enough for width"
+           eval_error "DW_OP_overlay/DW_OP_overlay_copy: overlay storage must be big enough for width"
          else
            (* There are 4 kinds of parts that may occur in the
               resulting composite.  Although not all kinds will end
@@ -582,9 +584,12 @@ let rec eval_one_simple op stack context =
               easier, we define all of them and then do elimination at
               the end.
 
-              1. The part of the base storage up to the overlay.  If
-              the overlay is beyond the base storage limits, this
+              1. The part of the base storage up to the overlay.
+              For DW_OP_overlay:
+              If the overlay is beyond the base storage limits, this
               part goes up to the end of the base storage.
+              For DW_OP_overlay_copy:
+              This part always goes up to the end of the base storage.
 
               2. The expansion with undefined storage from the end of
               the base until the beginning of the overlay,
@@ -592,20 +597,30 @@ let rec eval_one_simple op stack context =
 
               3. The overlay itself.
 
-              4. The remaining data from the base storage up to its end.  *)
+              4. The remaining data from the base storage up to its end.
+              This applies to DW_OP_overlay only.  For DW_OP_overlay_copy,
+              part1 already covers this part.  *)
 
            let overlay_start = offset + b_offset in
            let overlay_end = overlay_start + width in
-           let part1_end = Int.min overlay_start b_storage_size in
+           let part1_end = if op == DW_OP_overlay then
+                             Int.min overlay_start b_storage_size
+                           else
+                             b_storage_size
+           in
            let part1 = (0, part1_end, (b_storage, 0)) in
            let part2 = (part1_end, overlay_start, (Undefined, 0)) in
            let part3 = (overlay_start, overlay_end, overlay_loc) in
            let part4_loc = (b_storage, overlay_end) in
-           let part4 = (overlay_end, b_storage_size, part4_loc) in
-           let parts = simplify [part1; part2; part3; part4] in
+           let part4 = if op == DW_OP_overlay then
+                         [(overlay_end, b_storage_size, part4_loc)]
+                       else
+                         []
+           in
+           let parts = simplify (part1::part2::part3::part4) in
            Loc(Composite parts, b_offset)::stack'
 
-      | _ -> eval_error "DW_OP_overlay: need four elements on stack")
+      | _ -> eval_error "DW_OP_overlay/DW_OP_overlay_copy: need four elements on stack")
 
   | DW_OP_deref ->
      (match stack with
@@ -1167,14 +1182,18 @@ let _ =
   let overlay_locexpr = [DW_OP_reg4; DW_OP_lit3; DW_OP_offset;
                          DW_OP_reg7; DW_OP_lit7; DW_OP_offset;
                          DW_OP_lit5;
-                         DW_OP_lit6;
-                         DW_OP_overlay] in
-  let overlay_loc = eval_to_loc overlay_locexpr context in
+                         DW_OP_lit6] in
+  let overlay_loc = eval_to_loc (overlay_locexpr@[DW_OP_overlay]) context in
+  let overlay_copy_loc = eval_to_loc (overlay_locexpr@[DW_OP_overlay_copy]) context in
   test overlay_loc
     (Composite [(8 + 6, vreg_size, (Reg 4, 8 + 6));
                 (8, 8 + 6, (Reg 7, 7));
                 (0, 8, (Reg 4, 0))], 3)
-    "overlay: base bigger than overlay"
+    "overlay: base bigger than overlay";
+  test overlay_copy_loc
+    (Composite [(8, 8 + 6, (Reg 7, 7));
+                (0, vreg_size, (Reg 4, 0))], 3)
+    "overlay_copy: base bigger than overlay"
 
 (*
   b_offset : 3       v
@@ -1193,13 +1212,17 @@ let _ =
   let overlay_locexpr = [DW_OP_reg4; DW_OP_lit3; DW_OP_offset;
                          DW_OP_reg7; DW_OP_lit7; DW_OP_offset;
                          DW_OP_lit23;
-                         DW_OP_lit6;
-                         DW_OP_overlay] in
-  let overlay_loc = eval_to_loc overlay_locexpr context in
+                         DW_OP_lit6] in
+  let overlay_loc = eval_to_loc (overlay_locexpr@[DW_OP_overlay]) context in
+  let overlay_copy_loc = eval_to_loc (overlay_locexpr@[DW_OP_overlay_copy]) context in
   test overlay_loc
     (Composite [(26, 32, (Reg 7, 7));
                 (0, 26, (Reg 4, 0))], 3)
-    "overlay: overlay ends at base's end"
+    "overlay: overlay ends at base's end";
+  test overlay_copy_loc
+    (Composite [(26, 32, (Reg 7, 7));
+                (0, 32, (Reg 4, 0))], 3)
+    "overlay_copy: overlay ends at base's end"
 
 (*
   b_offset : 0         v
@@ -1219,12 +1242,16 @@ let _ =
   let overlay_locexpr = [DW_OP_reg3;
                          DW_OP_reg4; DW_OP_lit7; DW_OP_offset;
                          DW_OP_lit0;
-                         DW_OP_const4s width;
-                         DW_OP_overlay] in
-  let overlay_loc = eval_to_loc overlay_locexpr context in
+                         DW_OP_const4s width] in
+  let overlay_loc = eval_to_loc (overlay_locexpr@[DW_OP_overlay]) context in
+  let overlay_copy_loc = eval_to_loc (overlay_locexpr@[DW_OP_overlay_copy]) context in
   test overlay_loc
     (Composite [(0, width, (Reg 4, 7))], 0)
-    "overlay: overlay bigger than base"
+    "overlay: overlay bigger than base";
+  test overlay_copy_loc
+    (Composite [(0, width, (Reg 4, 7));
+                (0, 4, (Reg 3, 0))], 0)
+    "overlay_copy: overlay bigger than base"
 
 (*
   b_offset : 0   v
@@ -1243,12 +1270,15 @@ let _ =
   let overlay_locexpr = [DW_OP_reg1;
                          DW_OP_reg2;
                          DW_OP_lit0;
-                         DW_OP_const4s reg_size;
-                         DW_OP_overlay] in
-  let overlay_loc = eval_to_loc overlay_locexpr context in
+                         DW_OP_const4s reg_size] in
+  let overlay_loc = eval_to_loc (overlay_locexpr@[DW_OP_overlay]) context in
+  let overlay_copy_loc = eval_to_loc (overlay_locexpr@[DW_OP_overlay_copy]) context in
   test overlay_loc
     (Composite [(0, reg_size, (Reg 2, 0))], 0)
-    "overlay: base perfectly covered by overlay"
+    "overlay: base perfectly covered by overlay";
+  test overlay_copy_loc
+    (Composite [(0, reg_size, (Reg 2, 0)); (0, reg_size, (Reg 1, 0))], 0)
+    "overlay_copy: base perfectly covered by overlay"
 
 (*
   b_offset : 3       v
@@ -1267,14 +1297,19 @@ let _ =
   let overlay_locexpr = [DW_OP_reg4; DW_OP_lit3; DW_OP_offset;
                          DW_OP_reg7; DW_OP_lit7; DW_OP_offset;
                          DW_OP_lit31;
-                         DW_OP_lit6;
-                         DW_OP_overlay] in
-  let overlay_loc = eval_to_loc overlay_locexpr context in
+                         DW_OP_lit6] in
+  let overlay_loc = eval_to_loc (overlay_locexpr@[DW_OP_overlay]) context in
+  let overlay_copy_loc = eval_to_loc (overlay_locexpr@[DW_OP_overlay_copy]) context in
   test overlay_loc
     (Composite [(34, 40, (Reg 7, 7));
                 (32, 34, (Undefined, 0));
                 (0, 32, (Reg 4, 0))], 3)
-    "overlay: overlay after base with gap"
+    "overlay: overlay after base with gap";
+  test overlay_copy_loc
+    (Composite [(34, 40, (Reg 7, 7));
+                (32, 34, (Undefined, 0));
+                (0, 32, (Reg 4, 0))], 3)
+    "overlay_copy: overlay after base with gap"
 
 (*
   b_offset : 3       v
@@ -1293,15 +1328,21 @@ let _ =
   let overlay_locexpr = [DW_OP_reg4; DW_OP_lit3; DW_OP_offset;
                          DW_OP_reg7; DW_OP_lit7; DW_OP_offset;
                          DW_OP_lit29;
-                         DW_OP_lit6;
-                         DW_OP_overlay] in
-  let overlay_loc = eval_to_loc overlay_locexpr context in
+                         DW_OP_lit6] in
+  let overlay_loc = eval_to_loc (overlay_locexpr@[DW_OP_overlay]) context in
+  let overlay_copy_loc = eval_to_loc (overlay_locexpr@[DW_OP_overlay_copy]) context in
   test overlay_loc
     (Composite [(32, 38, (Reg 7, 7));
                 (0, 32, (Reg 4, 0))], 3)
     "overlay: overlay after base with zero gap";
   test (data_size (fst overlay_loc) context) (vreg_size + 6)
-    "overlay: size of composite"
+    "overlay: size of composite";
+  test overlay_copy_loc
+    (Composite [(32, 38, (Reg 7, 7));
+                (0, 32, (Reg 4, 0))], 3)
+    "overlay_copy: overlay after base with zero gap";
+  test (data_size (fst overlay_copy_loc) context) (vreg_size + 6)
+    "overlay_copy: size of composite"
 
 (*
   b_offset : 3       v
@@ -1320,13 +1361,19 @@ let _ =
   let overlay_locexpr = [DW_OP_reg4; DW_OP_lit3; DW_OP_offset;
                          DW_OP_reg7; DW_OP_lit7; DW_OP_offset;
                          DW_OP_lit26;
-                         DW_OP_lit6;
-                         DW_OP_overlay] in
-  let overlay_loc = eval_to_loc overlay_locexpr context in
+                         DW_OP_lit6] in
+  let overlay_loc = eval_to_loc (overlay_locexpr@[DW_OP_overlay]) context in
+  let overlay_copy_loc = eval_to_loc (overlay_locexpr@[DW_OP_overlay_copy]) context in
   test overlay_loc
     (Composite [(29, 35, (Reg 7, 7));
                 (0, 29, (Reg 4, 0))], 3)
-    "overlay: registers with overlap"
+    "overlay: registers with overlap";
+  test overlay_copy_loc
+    (Composite [(29, 35, (Reg 7, 7));
+                (0, 32, (Reg 4, 0))], 3)
+    "overlay: registers with overlap";
+  test (data_size (fst overlay_copy_loc) context) 35
+    "overlay_copy: size of composite again"
 
 (*
   b_offset : 3       v
@@ -1345,12 +1392,15 @@ let _ =
   let overlay_locexpr = [DW_OP_reg4; DW_OP_lit3; DW_OP_offset;
                          DW_OP_reg7; DW_OP_lit7; DW_OP_offset;
                          DW_OP_lit26;
-                         DW_OP_lit0;
-                         DW_OP_overlay] in
-  let overlay_loc = eval_to_loc overlay_locexpr context in
+                         DW_OP_lit0] in
+  let overlay_loc = eval_to_loc (overlay_locexpr@[DW_OP_overlay]) context in
+  let overlay_copy_loc = eval_to_loc (overlay_locexpr@[DW_OP_overlay_copy]) context in
   test overlay_loc
     (Composite [(0, 32, (Reg 4, 0))], 3)
-    "overlay: width is nil"
+    "overlay: width is nil";
+  test overlay_copy_loc
+    (Composite [(0, 32, (Reg 4, 0))], 3)
+    "overlay_copy: width is nil"
 
 (*
   b_offset : 0   v
@@ -1411,12 +1461,15 @@ let _ =
   let overlay_locexpr = [DW_OP_composite;
                          DW_OP_reg2;
                          DW_OP_lit0;
-                         DW_OP_const4s reg_size;
-                         DW_OP_overlay] in
-  let overlay_loc = eval_to_loc overlay_locexpr context in
+                         DW_OP_const4s reg_size] in
+  let overlay_loc = eval_to_loc (overlay_locexpr@[DW_OP_overlay]) context in
+  let overlay_copy_loc = eval_to_loc (overlay_locexpr@[DW_OP_overlay_copy]) context in
   test overlay_loc
     (Composite [(0, reg_size, (Reg 2, 0))], 0)
-    "overlay: on empty base"
+    "overlay: on empty base";
+  test overlay_copy_loc
+    (Composite [(0, reg_size, (Reg 2, 0))], 0)
+    "overlay_copy: on empty base"
 
 (*
   b_offset : 0   v
@@ -1435,13 +1488,17 @@ let _ =
   let overlay_locexpr = [DW_OP_composite;
                          DW_OP_reg2;
                          DW_OP_lit3;
-                         DW_OP_const4s reg_size;
-                         DW_OP_overlay] in
-  let overlay_loc = eval_to_loc overlay_locexpr context in
+                         DW_OP_const4s reg_size] in
+  let overlay_loc = eval_to_loc (overlay_locexpr@[DW_OP_overlay]) context in
+  let overlay_copy_loc = eval_to_loc (overlay_locexpr@[DW_OP_overlay_copy]) context in
   test overlay_loc
     (Composite [(3, reg_size + 3, (Reg 2, 0));
                 (0, 3, (Undefined, 0))], 0)
-    "overlay: after empty base"
+    "overlay: after empty base";
+  test overlay_copy_loc
+    (Composite [(3, reg_size + 3, (Reg 2, 0));
+                (0, 3, (Undefined, 0))], 0)
+    "overlay_copy: after empty base"
 
 (*
   b_offset : 23                          v
@@ -1460,14 +1517,18 @@ let _ =
   let overlay_locexpr = [DW_OP_reg4; DW_OP_lit23; DW_OP_offset;
                          DW_OP_reg7; DW_OP_lit7; DW_OP_offset;
                          DW_OP_const4s (-10);
-                         DW_OP_lit6;
-                         DW_OP_overlay] in
-  let overlay_loc = eval_to_loc overlay_locexpr context in
+                         DW_OP_lit6] in
+  let overlay_loc = eval_to_loc (overlay_locexpr@[DW_OP_overlay]) context in
+  let overlay_copy_loc = eval_to_loc (overlay_locexpr@[DW_OP_overlay_copy]) context in
   test overlay_loc
     (Composite [(19, 32, (Reg 4, 19));
                 (13, 19, (Reg 7, 7));
                 (0, 13, (Reg 4, 0))], 23)
-    "overlay: negative offset, naive case"
+    "overlay: negative offset, naive case";
+  test overlay_copy_loc
+    (Composite [(13, 19, (Reg 7, 7));
+                (0, 32, (Reg 4, 0))], 23)
+    "overlay_copy: negative offset, naive case"
 
 (*
   b_offset : 23                          v
@@ -1486,13 +1547,17 @@ let _ =
   let overlay_locexpr = [DW_OP_reg4; DW_OP_lit23; DW_OP_offset;
                          DW_OP_reg7; DW_OP_lit3; DW_OP_offset;
                          DW_OP_const4s (-23);
-                         DW_OP_lit6;
-                         DW_OP_overlay] in
-  let overlay_loc = eval_to_loc overlay_locexpr context in
+                         DW_OP_lit6] in
+  let overlay_loc = eval_to_loc (overlay_locexpr@[DW_OP_overlay]) context in
+  let overlay_copy_loc = eval_to_loc (overlay_locexpr@[DW_OP_overlay_copy]) context in
   test overlay_loc
     (Composite [(6, 32, (Reg 4, 6));
                 (0, 6, (Reg 7, 3))], 23)
-    "overlay: negative offset, overlay starts at base beginning"
+    "overlay: negative offset, overlay starts at base beginning";
+  test overlay_copy_loc
+    (Composite [(0, 6, (Reg 7, 3));
+                (0, 32, (Reg 4, 0))], 23)
+    "overlay_copy: negative offset, overlay starts at base beginning"
 
 (*
   b_offset : 15                       v
@@ -1560,14 +1625,29 @@ let _ =
                          DW_OP_lit13;
                          DW_OP_lit4;
                          DW_OP_overlay] in
+  let overlay_copy_locexpr = [DW_OP_reg4; DW_OP_lit3; DW_OP_offset;
+                              DW_OP_reg7;
+                              DW_OP_lit6;
+                              DW_OP_lit4;
+                              DW_OP_overlay_copy;
+                              DW_OP_reg0;
+                              DW_OP_lit13;
+                              DW_OP_lit4;
+                              DW_OP_overlay_copy] in
   let overlay_loc = eval_to_loc overlay_locexpr context in
+  let overlay_copy_loc = eval_to_loc overlay_copy_locexpr context in
   test overlay_loc
     (Composite [(20, 32, (Reg 4, 20));
                 (16, 20, (Reg 0, 0));
                 (13, 16, (Reg 4, 13));
                 (9, 13, (Reg 7, 0));
                 (0, 9, (Reg 4, 0))], 3)
-    "nested composites"
+    "overlay: nested composites";
+  test overlay_copy_loc
+    (Composite [(16, 20, (Reg 0, 0));
+                (9, 13, (Reg 7, 0));
+                (0, 32, (Reg 4, 0))], 3)
+    "overlay_copy: nested composites"
 
 (* Nested composites with overlap.
 
@@ -1589,13 +1669,28 @@ let _ =
                          DW_OP_lit8;
                          DW_OP_lit4;
                          DW_OP_overlay] in
+  let overlay_copy_locexpr = [DW_OP_reg4; DW_OP_lit3; DW_OP_offset;
+                              DW_OP_reg7;
+                              DW_OP_lit6;
+                              DW_OP_lit4;
+                              DW_OP_overlay_copy;
+                              DW_OP_reg0;
+                              DW_OP_lit8;
+                              DW_OP_lit4;
+                              DW_OP_overlay_copy] in
   let overlay_loc = eval_to_loc overlay_locexpr context in
+  let overlay_copy_loc = eval_to_loc overlay_copy_locexpr context in
   test overlay_loc
     (Composite [(15, 32, (Reg 4, 15));
                 (11, 15, (Reg 0, 0));
                 (9, 11, (Reg 7, 0));
                 (0, 9, (Reg 4, 0))], 3)
-    "nested composite with overlap"
+    "overlay: nested composite with overlap";
+  test overlay_copy_loc
+    (Composite [(11, 15, (Reg 0, 0));
+                (9, 13, (Reg 7, 0));
+                (0, 32, (Reg 4, 0))], 3)
+    "overlay_copy: nested composite with overlap"
 
 (* Nested composites.
 
@@ -1623,14 +1718,33 @@ let _ =
                          DW_OP_lit3;
                          DW_OP_lit13;
                          DW_OP_overlay] in
+
+  let overlay_copy_locexpr = [DW_OP_reg7; DW_OP_lit3; DW_OP_offset;
+
+                              DW_OP_reg4; DW_OP_lit4; DW_OP_offset;
+                              DW_OP_reg0;
+                              DW_OP_lit5;
+                              DW_OP_lit4;
+                              DW_OP_overlay_copy;
+
+                              DW_OP_lit3;
+                              DW_OP_lit13;
+                              DW_OP_overlay_copy] in
+
   let overlay_loc = eval_to_loc overlay_locexpr context in
+  let overlay_copy_loc = eval_to_loc overlay_copy_locexpr context in
   test overlay_loc
     (Composite [(19, 32, (Reg 7, 19));
                 (15, 19, (Reg 4, 13));
                 (11, 15, (Reg 0, 0));
                 (6, 11, (Reg 4, 4));
                 (0, 6, (Reg 7, 0))], 3)
-    "nested composite variant"
+    "overlay: nested composite variant";
+  test overlay_copy_loc
+    (Composite [(11, 15, (Reg 0, 0));
+                (6, 19, (Reg 4, 4));
+                (0, 32, (Reg 7, 0))], 3)
+    "overlay_copy: nested composite variant"
 
 (****************************)
 (* Print the final result.  *)
