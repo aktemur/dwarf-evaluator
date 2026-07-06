@@ -101,9 +101,10 @@ and elem_of_part (s, e, loc) =
   ]
 
 let rec build_output_elems context ops =
-  build_output_elems_impl [] context ops []
-and build_output_elems_impl result context ops stack =
-  let (ops', stack', context') = Dwarf_evaluator.eval_one ops stack context in
+  Dwarf_evaluator.ensure_no_duplicated_labels ops;
+  build_output_elems_impl [] context ops [] ops
+and build_output_elems_impl result context ops stack all_ops =
+  let (ops', stack') = Dwarf_evaluator.eval_one ops stack context all_ops in
   let result' = result @ [span ~cl:"trace_step" [
       span ~cl:"trace_step_op" [text (List.hd ops |> sexp_of_dwarf_op |> Sexp.to_string_hum)];
       span ~cl:"trace_step_stack" (List.map elem_of_stack_element stack')
@@ -111,7 +112,7 @@ and build_output_elems_impl result context ops stack =
   in
   match ops' with
   | [] -> result' @ [span ~cl:"trace_result" [elem_of_stack_element (List.hd stack')]]
-  | _ -> build_output_elems_impl result' context' ops' stack'
+  | _ -> build_output_elems_impl result' context ops' stack' all_ops
 
 let _ =
   let context = get "context" CoerceTo.textarea in

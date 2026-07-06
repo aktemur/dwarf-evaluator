@@ -41,8 +41,8 @@ type dwarf_op =
   | DW_OP_shr
 
   | DW_OP_le | DW_OP_ge | DW_OP_eq | DW_OP_lt | DW_OP_gt | DW_OP_ne
-  | DW_OP_skip of int (* Number of operators to skip.  *)
-  | DW_OP_bra of int (* Number of operators to skip.  *)
+  | DW_OP_skip of string (* The label to skip to.  *)
+  | DW_OP_bra of string (* The label to jump to.  *)
   | DW_OP_call of string (* Name of the DW_AT_location element in the context.  *)
 
   | DW_OP_addr of int
@@ -77,6 +77,9 @@ type dwarf_op =
 
   | DW_OP_deref
   | DW_OP_offset
+
+  | Label of string (* A label to mark a position in the list of operators,
+                       similar to labels in assembly code.  *)
 
 (* Evaluation context.
    The consumer provides the evaluation context.  *)
@@ -274,16 +277,37 @@ let ints_to_data ns =
   in List.iteri (fun i n -> Bytes.set_int32_ne data (i * 4) (Int32.of_int n)) ns;
      String.of_bytes data
 
-(* Discard n elements from the head of the given list.  *)
-let rec discard n lst =
-  if n = 0 then lst
-  else discard (n - 1) (List.tl lst)
+(* Given a label, find the position in the list of operations and
+   return the operations at that position.  *)
+let rec ops_at_label ops label =
+  match ops with
+  | [] -> failwith ("Label '" ^ label ^ "' not found")
+  | Label(label')::ops' when label = label' -> ops'
+  | _::ops' -> ops_at_label ops' label
 
 exception ConversionError of string * stack_element
 exception EvalError of string * (stack_element list)
 
 let raise_error msg stack =
   raise (EvalError(msg, stack))
+
+(* Check for duplicate labels.  *)
+let ensure_no_duplicated_labels ops =
+  (* Fold function for collecting all labels in a list of operators.  *)
+  let collect labels op =
+    match op with
+    | Label label -> label::labels
+    | _ -> labels
+  in
+  let rec enforce_unique labels =
+    match labels with
+    | [] -> ()
+    | a::b::_ when a = b ->
+       raise_error ("label '" ^ a ^ "' is duplicate") []
+    | _::labels' -> enforce_unique labels'
+  in List.fold_left collect [] ops
+     |> List.sort compare
+     |> enforce_unique
 
 (* Implicit conversion rules.  *)
 let as_value element =
@@ -626,37 +650,41 @@ let rec eval_one_simple op stack context =
                  Loc(storage, new_offset)::stack'
       | _ -> eval_error "DW_OP_offset: need two elements on stack")
 
+  | Label(_) -> stack
+
   (* Handled in the upper level.  *)
   | DW_OP_skip(n) | DW_OP_bra(n) -> stack
 
 (* Evaluate a single DWARF operator using the given stack.  *)
-and eval_one ops stack context =
+and eval_one ops stack context all_ops =
   match ops with
-  | [] -> (ops, stack, context)
+  | [] -> ([], stack)
 
   | DW_OP_skip(n)::ops' ->
      (* DW_OP_skip is a control flow operator that requires access to
         the complete DWARF expression to be able skip a number of
-        operators.  Hence, handle it here.  Without loss of
-        generality, we support skipping forward only.  *)
-     ((discard n ops'), stack, context)
+        operators.  Hence, handle it here.  *)
+     (ops_at_label all_ops n, stack)
 
   | DW_OP_bra(n)::ops' ->
      (match stack with
       | v::stack' ->
          if as_value v = 0 then
-           (ops', stack', context)
+           (ops', stack')
          else
-           ((discard n ops'), stack', context)
+           (ops_at_label all_ops n, stack')
       | _ -> raise_error "DW_OP_bra: need an element on stack" stack)
 
-  | op::ops' -> (ops', (eval_one_simple op stack context), context)
+  | op::ops' -> (ops', (eval_one_simple op stack context))
 
 (* Evaluate the given list of DWARF operators using the given stack.  *)
-and eval_all ops stack context =
-  match eval_one ops stack context with
-  | ([], stack', _) -> stack'
-  | (ops', stack', context') -> eval_all ops' stack' context'
+and eval_all all_ops stack context =
+  ensure_no_duplicated_labels all_ops;
+  let rec helper ops stack =
+    match eval_one ops stack context all_ops with
+    | ([], stack') -> stack'
+    | (ops', stack') -> helper ops' stack'
+  in helper all_ops stack
 
 (* Evaluate the given list of DWARF operators using an initially empty
    stack, return the top element.  *)
@@ -849,26 +877,67 @@ let _ =
   test (eval0 [DW_OP_lit15;
                DW_OP_lit25;
                DW_OP_eq;
-               DW_OP_bra 4;
+               DW_OP_bra "branch";
                DW_OP_lit2;
                DW_OP_lit3;
                DW_OP_mul;
-               DW_OP_skip 3;
+               DW_OP_skip "end";
+               Label "branch";
                DW_OP_lit4;
                DW_OP_lit5;
-               DW_OP_plus] context) (Val 6) "control flow 1"
+               DW_OP_plus;
+               Label "end"] context) (Val 6) "control flow 1"
 let _ =
   test (eval0 [DW_OP_lit15;
                DW_OP_lit15;
                DW_OP_eq;
-               DW_OP_bra 4;
+               DW_OP_bra "branch";
                DW_OP_lit2;
                DW_OP_lit3;
                DW_OP_mul;
-               DW_OP_skip 3;
+               DW_OP_skip "end";
+               Label "branch";
                DW_OP_lit4;
                DW_OP_lit5;
-               DW_OP_plus] context) (Val 9) "control flow 2"
+               DW_OP_plus;
+               Label "end"] context) (Val 9) "control flow 2"
+
+let _ =
+  test (eval0 [DW_OP_lit2;
+               Label "loop";
+               DW_OP_lit1;
+               DW_OP_minus;
+               DW_OP_dup;
+               DW_OP_bra "loop"] context) (Val 0) "control flow: branch backwards"
+
+(* Implement a loop that iterates 5 times and leaves 2^5=32 on the
+   stack.  *)
+let _ =
+  test (eval0 [DW_OP_lit1; (* result *)
+               DW_OP_lit5; (* counter *)
+               Label "loop";
+               DW_OP_dup;
+               DW_OP_bra "enter";
+               DW_OP_skip "end";
+               Label "enter";
+               DW_OP_lit1; (* Decrement the counter.  *)
+               DW_OP_minus;
+               DW_OP_swap; (* Multiply the result by 2.  *)
+               DW_OP_lit2;
+               DW_OP_mul;
+               DW_OP_swap;
+               DW_OP_skip "loop"; (* Go back to the loop condition.  *)
+               Label "end";
+               DW_OP_swap] context) (Val 32) "control flow: skip backwards to loop"
+
+(* Negative test for duplicated labels.  *)
+let _ =
+  test_error (fun () ->
+      eval0 [DW_OP_lit1; Label "one"; Label "two";
+             DW_OP_lit2; DW_OP_lit1; Label "three";
+             DW_OP_lit1; Label "two"; DW_OP_lit5] context)
+    "control flow: duplicate label detected"
+
 let _ =
   let context = DW_AT_location("plus", [DW_OP_plus])::context in
   test (eval0 [DW_OP_lit17;

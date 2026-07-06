@@ -311,6 +311,31 @@ DW_OP_lit2
 DW_OP_plus
 DW_OP_call xyz
     `);
+    addPreset(
+    'Loop',
+    'Example using DW_OP_skip and DW_OP_bra',
+    `
+(
+)`,
+    `
+; Loop 5 times and compute 2^5=32.
+DW_OP_lit1
+DW_OP_lit5
+Label loop
+DW_OP_dup
+DW_OP_bra enter
+DW_OP_skip end
+Label enter
+DW_OP_lit1
+DW_OP_minus
+DW_OP_swap
+DW_OP_lit2
+DW_OP_mul
+DW_OP_swap
+DW_OP_skip loop
+Label end
+DW_OP_swap
+    `);
 </script>
 <script defer src="dwarf_evaluator_js.bc.js"></script>
 </html>
