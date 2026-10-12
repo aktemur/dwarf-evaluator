@@ -1725,6 +1725,47 @@ let _ =
   test (eval_to_loc [DW_OP_fbreg (-8)] context)
     (Mem 0, 4) "DW_OP_fbreg"
 
+(***
+ * DWARF Stack operation examples from the DWARF Spec Appendix.
+ ***)
+
+let d_1_2_before = [Val 17; Val 29; Val 1000]
+let d_1_2_dup_exp = [DW_OP_dup]
+let _ =
+  test (eval_all d_1_2_dup_exp d_1_2_before [])
+    [Val 17; Val 17; Val 29; Val 1000]
+    "appendix D.1.2: DW_OP_dup"
+
+let d_1_2_drop_exp = [DW_OP_drop]
+let _ =
+  test (eval_all d_1_2_drop_exp d_1_2_before [])
+    [Val 29; Val 1000]
+    "appendix D.1.2: DW_OP_drop"
+
+let d_1_2_pick_exp = [DW_OP_pick 2]
+let _ =
+  test (eval_all d_1_2_pick_exp d_1_2_before [])
+    [Val 1000; Val 17; Val 29; Val 1000]
+    "appendix D.1.2: DW_OP_pick 2"
+
+let d_1_2_over_exp = [DW_OP_over]
+let _ =
+  test (eval_all d_1_2_over_exp d_1_2_before [])
+    [Val 29; Val 17; Val 29; Val 1000]
+    "appendix D.1.2: DW_OP_over"
+
+let d_1_2_swap_exp = [DW_OP_swap]
+let _ =
+  test (eval_all d_1_2_swap_exp d_1_2_before [])
+    [Val 29; Val 17; Val 1000]
+    "appendix D.1.2: DW_OP_swap"
+
+let d_1_2_rot_exp = [DW_OP_rot]
+let _ =
+  test (eval_all d_1_2_rot_exp d_1_2_before [])
+    [Val 29; Val 1000; Val 17]
+    "appendix D.1.2: DW_OP_rot"
+
 (****************************)
 (* Print the final result.  *)
 let _ =
