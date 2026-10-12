@@ -1766,6 +1766,144 @@ let _ =
     [Val 29; Val 1000; Val 17]
     "appendix D.1.2: DW_OP_rot"
 
+(***
+ * DWARF location expression examples from the DWARF Spec Appendix.
+ ***)
+
+let d_1_3_reg3 = [DW_OP_reg3]
+let d_1_3_reg3_context = []
+let _ =
+  test (eval_to_loc d_1_3_reg3 d_1_3_reg3_context)
+    (Reg 3, 0)
+    "appendix D.1.3: reg3"
+
+let d_1_3_regx54 = [DW_OP_regx 54]
+let d_1_3_regx54_context = []
+let _ =
+  test (eval_to_loc d_1_3_regx54 d_1_3_regx54_context)
+    (Reg 54, 0)
+    "appendix D.1.3: regx54"
+
+(* The spec example uses 0x80d0045c.  We use a smaller value here to avoid a
+   truncation warning when compiling with js_of_ocaml, which represents
+   OCaml ints as signed 32-bit values in JavaScript.  *)
+let d_1_3_addr = [DW_OP_addr 0x40d0045c]
+let d_1_3_addr_context = []
+let _ =
+  test (eval_to_loc d_1_3_addr d_1_3_addr_context)
+    (Mem 0, 0x40d0045c)
+    "appendix D.1.3: addr"
+
+let d_1_3_breg11 = [DW_OP_breg11 44]
+let d_1_3_breg11_context = [TargetReg(11, int_to_data 42)]
+let _ =
+  test (eval_to_loc d_1_3_breg11 d_1_3_breg11_context)
+    (Mem 0, 44 + 42)
+    "appendix D.1.3: breg11"
+
+(* "Given a DW_AT_frame_base value of 'DW_OP_breg31 64', this example
+   computes the address of a local variable that is -50 bytes from a
+   logical frame pointer that is computed by adding 64 to the current
+   stack pointer (register 31)."  *)
+let d_1_3_fbreg = [DW_OP_fbreg (-50)]
+let d_1_3_fbreg_context =
+  [DW_AT_frame_base [DW_OP_breg31 64]; TargetReg(31, int_to_data 42)]
+let _ =
+  test (eval_to_loc d_1_3_fbreg d_1_3_fbreg_context)
+    (Mem 0, 42 + 64 - 50)
+    "appendix D.1.3: fbreg"
+
+(* "A call-by-reference parameter whose address is in the location
+   beginning 32 bytes from where register 54 points."
+   Register 54 points at address 4; 32 bytes further (address 36) holds
+   the pointer value 2000, which DW_OP_deref reads and which then is
+   interpreted as the parameter's address.  *)
+let d_1_3_bregx_deref = [DW_OP_bregx(54, 32); DW_OP_deref]
+let d_1_3_bregx_deref_context =
+  [TargetReg(54, int_to_data 4);
+   TargetMem(0, ints_to_data [0; 0; 0; 0; 0; 0; 0; 0; 0; 2000])]
+let _ =
+  test (eval_to_loc d_1_3_bregx_deref d_1_3_bregx_deref_context)
+    (Mem 0, 2000)
+    "appendix D.1.3: bregx+deref (call-by-reference parameter)"
+
+(* "A structure member is four bytes from the start of the structure
+   instance.  The base location is assumed to be already on the
+   stack."  *)
+let d_1_3_offset = [DW_OP_lit4; DW_OP_offset]
+let d_1_3_offset_initial_stack = [Loc(Mem 0, 100)]
+let _ =
+  test (eval_all d_1_3_offset d_1_3_offset_initial_stack [])
+    [Loc(Mem 0, 104)]
+    "appendix D.1.3: lit4+offset (structure member)"
+
+(* "A variable whose first four bytes reside in register 3 and whose
+   next two bytes reside in register 10."  *)
+let d_1_3_composite_1 = [DW_OP_composite;
+                         DW_OP_reg3;
+                         DW_OP_piece 4;
+                         DW_OP_reg10;
+                         DW_OP_piece 2]
+let d_1_3_composite_1_context =
+  [TargetReg(3, int_to_data 0); TargetReg(10, int_to_data 0)]
+let _ =
+  test (eval_to_loc d_1_3_composite_1 d_1_3_composite_1_context)
+    (Composite [(4, 6, (Reg 10, 0)); (0, 4, (Reg 3, 0))], 0)
+    "appendix D.1.3: composite (reg3[0:4] + reg10[4:6])"
+
+(* "A twelve byte value whose first four bytes reside in register
+   zero, whose middle four bytes are unavailable (perhaps due to
+   optimization), and whose last four bytes are in memory, 12 bytes
+   before the frame base."  *)
+let d_1_3_composite_2 = [DW_OP_composite;
+                         DW_OP_reg0;
+                         DW_OP_piece 4;
+                         DW_OP_piece 4;
+                         DW_OP_fbreg (-12);
+                         DW_OP_piece 4]
+let d_1_3_composite_2_context =
+  [DW_AT_frame_base [DW_OP_breg31 64];
+   TargetReg(31, int_to_data 42);
+   TargetReg(0, int_to_data 0)]
+let _ =
+  test (eval_to_loc d_1_3_composite_2 d_1_3_composite_2_context)
+    (Composite [(8, 12, (Mem 0, 42 + 64 - 12));
+                (4, 8, (Undefined, 0));
+                (0, 4, (Reg 0, 0))], 0)
+    "appendix D.1.3: composite (reg0[0:4] + unavailable[4:8] + fbreg[8:12])"
+
+(* "Add the contents of r1 and r2 to compute a value. This value is
+   the 'contents' of an otherwise anonymous location."  *)
+let d_1_3_stack_value = [DW_OP_breg1 0; DW_OP_breg2 0; DW_OP_plus; DW_OP_stack_value]
+let d_1_3_stack_value_context =
+  [TargetReg(1, int_to_data 7); TargetReg(2, int_to_data 5)]
+let _ =
+  test (eval_to_loc d_1_3_stack_value d_1_3_stack_value_context)
+    (ImpData (int_to_data (7 + 5)), 0)
+    "appendix D.1.3: breg+breg+plus+stack_value (anonymous computed value)"
+
+(* "The object value is found in an anonymous (virtual) location
+   whose value consists of two parts, given in memory address order:
+   the 4 byte value 1 followed by the four byte value computed from
+   the sum of the contents of r3 and r4."  *)
+let d_1_3_composite_stack_values =
+  [DW_OP_composite;
+   DW_OP_lit1;
+   DW_OP_stack_value;
+   DW_OP_piece 4;
+   DW_OP_breg3 0;
+   DW_OP_breg4 0;
+   DW_OP_plus;
+   DW_OP_stack_value;
+   DW_OP_piece 4]
+let d_1_3_composite_stack_values_context =
+  [TargetReg(3, int_to_data 10); TargetReg(4, int_to_data 20)]
+let _ =
+  test (eval_to_loc d_1_3_composite_stack_values d_1_3_composite_stack_values_context)
+    (Composite [(4, 8, (ImpData (int_to_data (10 + 20)), 0));
+                (0, 4, (ImpData (int_to_data 1), 0))], 0)
+    "appendix D.1.3: composite of two stack_value pieces"
+
 (****************************)
 (* Print the final result.  *)
 let _ =
