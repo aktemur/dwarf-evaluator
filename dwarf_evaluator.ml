@@ -66,6 +66,8 @@ type dwarf_op =
   | DW_OP_breg24 of int | DW_OP_breg25 of int | DW_OP_breg26 of int | DW_OP_breg27 of int
   | DW_OP_breg28 of int | DW_OP_breg29 of int | DW_OP_breg30 of int | DW_OP_breg31 of int
 
+  | DW_OP_fbreg of int
+
   | DW_OP_undefined
   | DW_OP_implicit_value of int * data
   | DW_OP_stack_value
@@ -92,6 +94,7 @@ type context_item =
      DW_AT_location of a DIE.  These can be specified in the
      context using DW_AT_location.  *)
   | DW_AT_location of string * (dwarf_op list) (* Name of DIE and expr.  *)
+  | DW_AT_frame_base of (dwarf_op list)        (* Frame base locexpr.  *)
 
 (* Virtual storage.  *)
 and storage =
@@ -139,6 +142,12 @@ let rec dw_at_location context name =
   | [] -> failwith ("item '" ^ name ^ "' not found in context")
   | DW_AT_location(name', expr)::context' when name = name' -> expr
   | _::context' -> dw_at_location context' name
+
+let rec frame_base context =
+  match context with
+  | [] -> failwith "DW_AT_frame_base not found in context"
+  | DW_AT_frame_base(expr)::context' -> expr
+  | _::context' -> frame_base context'
 
 (* Element kinds for the DWARF expression evaluation stack.
    A stack is simply a list of stack elements.  *)
@@ -528,6 +537,12 @@ let rec eval_one_simple op stack context =
   | DW_OP_breg29 offset -> eval_one_simple (DW_OP_bregx(29, offset)) stack context
   | DW_OP_breg30 offset -> eval_one_simple (DW_OP_bregx(30, offset)) stack context
   | DW_OP_breg31 offset -> eval_one_simple (DW_OP_bregx(31, offset)) stack context
+
+  | DW_OP_fbreg offset ->
+     let (storage, offset2) = eval_to_loc (frame_base context) context in
+     let fb_loc = (storage, offset + offset2) in
+     check_bounds fb_loc context;
+     Loc(fb_loc)::stack
 
   | DW_OP_undefined -> Loc(Undefined, 0)::stack
 
@@ -1701,6 +1716,14 @@ let _ =
                 (6, 11, (Reg 4, 4));
                 (0, 6, (Reg 7, 0))], 3)
     "nested composite variant"
+
+(* fbreg.  *)
+let _ =
+  let context = [DW_AT_frame_base [DW_OP_breg3 (-4)];
+                 TargetReg(3, int_to_data 16);
+                 TargetMem(0, ints_to_data [42; 43; 44; 45])] in
+  test (eval_to_loc [DW_OP_fbreg (-8)] context)
+    (Mem 0, 4) "DW_OP_fbreg"
 
 (****************************)
 (* Print the final result.  *)
