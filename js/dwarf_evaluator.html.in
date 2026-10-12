@@ -59,20 +59,24 @@ button {
     width: 100%;
     font-weight: bold;
 }
-#presets_heading,
-#presets {
+.presets_heading,
+#presets,
+#spec_presets {
     display: inline;
 }
-#presets_heading::after {
+.presets_heading::after {
     content: ': ';
     color: black;
 }
-#presets { padding: 0; }
-#presets > li {
+#presets,
+#spec_presets { padding: 0; }
+#presets > li,
+#spec_presets > li {
     display: inline-block;
     margin-left: 0.5em;
 }
-#presets > li::before {
+#presets > li::before,
+#spec_presets > li::before {
     content: '• ';
     color: black;
 }
@@ -168,8 +172,11 @@ footer {
         maxlength="2000"
         ></textarea>
     <div><button type="button" id="eval">Evaluate</button></div>
-    <h3 id="presets_heading">Presets</h3>
+    <h3 class="presets_heading">Presets</h3>
     <ul id="presets"></ul>
+    <br>
+    <h3 class="presets_heading">Spec examples</h3>
+    <ul id="spec_presets"></ul>
     <h2>Output</h2>
     <h3>Preprocessed Input</h3>
     <pre class="textarea" id="preprocessed">

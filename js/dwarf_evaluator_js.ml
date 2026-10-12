@@ -63,6 +63,45 @@ let setChildren elem children =
   elem##.innerHTML := Js.string "";
   List.iter (Dom.appendChild elem) children
 
+let add_preset presets shortname description locexpr_sexp context_sexp =
+  let a = Dom_html.createA Dom_html.window##.document in
+  a##.innerHTML := Js.string shortname;
+  a##.title := Js.string description;
+  a##.href := Js.string
+    ("?" ^ Url.encode_arguments [("context", context_sexp); ("input", locexpr_sexp)]);
+  let li = Dom_html.createLi Dom_html.window##.document in
+  Dom.appendChild li a;
+  Dom.appendChild presets li
+
+let add_appendix_presets presets =
+  [
+    ("reg3", "Appendix D.1.3 example",
+     Dwarf_evaluator.d_1_3_reg3, Dwarf_evaluator.d_1_3_reg3_context);
+    ("regx", "Appendix D.1.3 example",
+     Dwarf_evaluator.d_1_3_regx54, Dwarf_evaluator.d_1_3_regx54_context);
+    ("addr", "Appendix D.1.3 example",
+     Dwarf_evaluator.d_1_3_addr, Dwarf_evaluator.d_1_3_addr_context);
+    ("breg", "Appendix D.1.3 example",
+     Dwarf_evaluator.d_1_3_breg11, Dwarf_evaluator.d_1_3_breg11_context);
+    ("fbreg", "Appendix D.1.3 example",
+     Dwarf_evaluator.d_1_3_fbreg, Dwarf_evaluator.d_1_3_fbreg_context);
+    ("bregx", "Appendix D.1.3 example",
+     Dwarf_evaluator.d_1_3_bregx_deref, Dwarf_evaluator.d_1_3_bregx_deref_context);
+    ("offset", "Appendix D.1.3 example",
+     DW_OP_addr 100 :: Dwarf_evaluator.d_1_3_offset, []);
+    ("composite1", "Appendix D.1.3 example",
+     Dwarf_evaluator.d_1_3_composite_1, Dwarf_evaluator.d_1_3_composite_1_context);
+    ("composite2", "Appendix D.1.3 example",
+     Dwarf_evaluator.d_1_3_composite_2, Dwarf_evaluator.d_1_3_composite_2_context);
+    ("stack-value1", "Appendix D.1.3 example",
+     Dwarf_evaluator.d_1_3_stack_value, Dwarf_evaluator.d_1_3_stack_value_context);
+    ("stack-value2", "Appendix D.1.3 example",
+     Dwarf_evaluator.d_1_3_composite_stack_values, Dwarf_evaluator.d_1_3_composite_stack_values_context)
+  ] |> List.iter (fun (n, d, e, c) ->
+           add_preset presets n d
+             (Sexp.to_string_hum (sexp_of_locexpr_t e))
+             (Sexp.to_string_hum (sexp_of_context_t c)))
+
 let rec elem_of_stack_element element =
   let children = match element with
   | Val v -> [span ~cl:"stack_element_kind" [text "Val"]; elem_of_value v]
@@ -120,6 +159,8 @@ let _ =
   let eval = get "eval" CoerceTo.button in
   let preprocessed = get "preprocessed" CoerceTo.element in
   let output = get "output" CoerceTo.element in
+  let presets = get "spec_presets" CoerceTo.ul in
+  add_appendix_presets presets;
   let arguments = Url.Current.arguments in
   let initial_context = List.assoc_opt "context" arguments |> Option.value ~default:"" in
   let initial_input = List.assoc_opt "input" arguments |> Option.value ~default:"" in
