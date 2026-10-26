@@ -96,7 +96,9 @@ let add_appendix_presets presets =
     ("stack-value1", "Appendix D.1.3 example",
      Dwarf_evaluator.d_1_3_stack_value, Dwarf_evaluator.d_1_3_stack_value_context);
     ("stack-value2", "Appendix D.1.3 example",
-     Dwarf_evaluator.d_1_3_composite_stack_values, Dwarf_evaluator.d_1_3_composite_stack_values_context)
+     Dwarf_evaluator.d_1_3_composite_stack_values, Dwarf_evaluator.d_1_3_composite_stack_values_context);
+    ("imp-pointer", "Appendix D.13, C implicit pointer example",
+     Dwarf_evaluator.d_13_implicit_pointer, Dwarf_evaluator.d_13_implicit_pointer_context)
   ] |> List.iter (fun (n, d, e, c) ->
            add_preset presets n d
              (Sexp.to_string_hum (sexp_of_locexpr_t e))

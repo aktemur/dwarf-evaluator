@@ -1904,6 +1904,23 @@ let _ =
                 (0, 4, (ImpData (int_to_data 1), 0))], 0)
     "appendix D.1.3: composite of two stack_value pieces"
 
+(* Example from "Figure D.67: C implicit pointer example #1".  *)
+let d_13_implicit_pointer =
+  [DW_OP_implicit_pointer("s", 2)]
+let d_13_implicit_pointer_context =
+  [TargetReg(5, int_to_data 1);
+   DW_AT_location("s", [DW_OP_breg5(1); DW_OP_stack_value; DW_OP_piece(2);
+                        DW_OP_breg5(2); DW_OP_stack_value; DW_OP_piece(1);
+                        DW_OP_breg5(3); DW_OP_stack_value; DW_OP_piece(1)])]
+let _ =
+  test (eval_to_loc d_13_implicit_pointer d_13_implicit_pointer_context)
+    (ImpPointer (Composite [(3, 4, (ImpData (int_to_data 4), 0));
+                            (2, 3, (ImpData (int_to_data 3), 0));
+                            (0, 2, (ImpData (int_to_data 2), 0))],
+                 2),
+     0)
+    "appendix D.13: C implicit pointer example 1"
+
 (****************************)
 (* Print the final result.  *)
 let _ =
