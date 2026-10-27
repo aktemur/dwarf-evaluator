@@ -169,6 +169,15 @@ exception ReadOnlyData of storage
 
 (* Utility operations.  *)
 
+(* Bound-checking for locations.  *)
+let invalid_location ((storage, offset): location) context =
+  offset < 0 || offset >= (data_size storage context)
+
+let check_bounds loc context =
+  if invalid_location loc context then
+    raise (OutOfBounds loc)
+  else ()
+
 (* Find the part in a composite that contains the given offset.
    Return the location and the adjusted offset.  *)
 let find_part parts offset : location =
@@ -238,17 +247,15 @@ let simplify parts =
   |> flatten
 
 let rec read_one_byte context (location: location) =
+  check_bounds location context;
   let (storage, offset) = location
-  in if offset >= (data_size storage context) then
-       raise (OutOfBounds location)
-     else
-       match storage with
-       | Mem(addr_space) -> String.get (mem_data context addr_space) offset
-       | Reg(n) -> String.get (reg_data context n) offset
-       | Undefined -> raise (UndefinedData(offset))
-       | ImpData(data) -> String.get data offset
-       | ImpPointer(_, _) -> raise (UndefinedData(offset))
-       | Composite(parts) -> read_one_byte context (find_part parts offset)
+  in match storage with
+     | Mem(addr_space) -> String.get (mem_data context addr_space) offset
+     | Reg(n) -> String.get (reg_data context n) offset
+     | Undefined -> raise (UndefinedData(offset))
+     | ImpData(data) -> String.get data offset
+     | ImpPointer(_, _) -> raise (UndefinedData(offset))
+     | Composite(parts) -> read_one_byte context (find_part parts offset)
 
 let fetch_data context (loc: location) length =
   let (storage, offset) = loc
@@ -487,7 +494,8 @@ let rec eval_one_simple op stack context =
   | DW_OP_bregx(n, offset) ->
      let reg_contents = fetch_int context ((Reg n), 0)
      in let address = reg_contents + offset
-        in Loc(Mem 0, address)::stack
+        in check_bounds (Mem 0, address) context;
+           Loc(Mem 0, address)::stack
   | DW_OP_breg0  offset -> eval_one_simple (DW_OP_bregx(0,  offset)) stack context
   | DW_OP_breg1  offset -> eval_one_simple (DW_OP_bregx(1,  offset)) stack context
   | DW_OP_breg2  offset -> eval_one_simple (DW_OP_bregx(2,  offset)) stack context
@@ -539,8 +547,10 @@ let rec eval_one_simple op stack context =
   | DW_OP_implicit_pointer(name, offset) ->
      (match eval_all (dw_at_location context name) [] context with
       | result::_ ->
-         let (storage, offset2) = as_loc result
-         in Loc(ImpPointer(storage, offset2 + offset), 0)::stack
+         let (storage, offset2) = as_loc result in
+         let pointee_loc = (storage, offset2 + offset) in
+         check_bounds pointee_loc context;
+         Loc(ImpPointer(pointee_loc), 0)::stack
       | _ -> eval_error "DW_OP_implicit_pointer: referenced locexpr must evaluate to a location")
 
   | DW_OP_composite -> Loc(Composite [], 0)::stack
@@ -634,10 +644,8 @@ let rec eval_one_simple op stack context =
       | displacement::location::stack' ->
          let (storage, offset) = as_loc location
          in let new_offset = offset + (as_value displacement)
-            in if (new_offset >= (data_size storage context)) then
-                 raise (OutOfBounds (storage, offset))
-               else
-                 Loc(storage, new_offset)::stack'
+            in check_bounds (storage, new_offset) context;
+               Loc(storage, new_offset)::stack'
       | _ -> eval_error "DW_OP_offset: need two elements on stack")
 
   | Label(_) -> stack
