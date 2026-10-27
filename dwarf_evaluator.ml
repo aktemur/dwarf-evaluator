@@ -545,13 +545,10 @@ let rec eval_one_simple op stack context =
       | _ -> eval_error "DW_OP_stack_value: need an element on stack")
 
   | DW_OP_implicit_pointer(name, offset) ->
-     (match eval_all (dw_at_location context name) [] context with
-      | result::_ ->
-         let (storage, offset2) = as_loc result in
-         let pointee_loc = (storage, offset2 + offset) in
-         check_bounds pointee_loc context;
-         Loc(ImpPointer(pointee_loc), 0)::stack
-      | _ -> eval_error "DW_OP_implicit_pointer: referenced locexpr must evaluate to a location")
+     let (storage, offset2) = eval_to_loc (dw_at_location context name) context in
+     let pointee_loc = (storage, offset2 + offset) in
+     check_bounds pointee_loc context;
+     Loc(ImpPointer(pointee_loc), 0)::stack
 
   | DW_OP_composite -> Loc(Composite [], 0)::stack
 
@@ -686,10 +683,10 @@ and eval_all all_ops stack context =
 
 (* Evaluate the given list of DWARF operators using an initially empty
    stack, return the top element.  *)
-let eval0 ops context =
+and eval0 ops context =
   List.hd (eval_all ops [] context)
 
-let eval_to_loc ops context =
+and eval_to_loc ops context =
   as_loc (eval0 ops context)
 
 (**************)
