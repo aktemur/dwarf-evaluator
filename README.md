@@ -22,8 +22,8 @@ $ opam init # follow the prompts here; accepting defaults changes ~/.profile
             # which means you won't have to remember to `eval $(opam env)` in
             # every new shell to access your switches
 $ cd path/to/dwarf-evaluator
-$ opam switch create . 5.3.0 # creates a hermetic environment used for this dir
-                             # with the 5.3.0 OCaml compiler
+$ opam switch create . 5.4.0 # creates a hermetic environment used for this dir
+                             # with the 5.4.0 OCaml compiler
 ```
 
 At this point, whenever your shell is in the project directory you can run the
