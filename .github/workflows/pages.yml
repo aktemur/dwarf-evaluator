@@ -33,7 +33,9 @@ jobs:
       - name: Set-up OCaml
         uses: ocaml/setup-ocaml@v3
         with:
-          ocaml-compiler: 5
+          # ppx_import (1.12.0) requires OCaml < 5.5, so do not use the
+          # newest 5.x release.
+          ocaml-compiler: "5.4"
       - run: opam install . --deps-only
       - run: opam exec -- dune build --profile=release
       - name: Setup Pages
