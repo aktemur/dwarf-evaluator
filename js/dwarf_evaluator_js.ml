@@ -58,6 +58,7 @@ let span ?(cl="") children =
 
 let text s = Dom_html.window##.document##createTextNode (Js.string s)
 let text_of_int i = text (string_of_int i)
+let text_of_hex i = text (sprintf "0x%x" i)
 
 let setChildren elem children =
   elem##.innerHTML := Js.string "";
@@ -113,7 +114,7 @@ let rec elem_of_stack_element element =
 and elem_of_value v = span ~cl:"value" [text_of_int v]
 and elem_of_location (storage, offset) =
   span ~cl:"location" [
-    span ~cl:"location_offset" [text_of_int offset];
+    span ~cl:"location_offset" [text_of_hex offset];
     span ~cl:"location_storage" [elem_of_storage storage]
   ]
 and elem_of_storage storage =
@@ -136,8 +137,8 @@ and elem_of_storage storage =
       ]
 and elem_of_part (s, e, loc) =
   span ~cl:"composite_part" [
-    span ~cl:"composite_part_start" [text_of_int s];
-    span ~cl:"composite_part_end" [text_of_int e];
+    span ~cl:"composite_part_start" [text_of_hex s];
+    span ~cl:"composite_part_end" [text_of_hex e];
     elem_of_location loc
   ]
 
